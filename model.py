@@ -49,6 +49,10 @@ class Conv2dMod(nn.Module):
 
         return x
 
+class LayerNorm(nn.Module):
+    def __init__(self, normalized_shape, channel_first=True):
+        pass
+
 class ConvNeXtModBlock(nn.Module):
     def __init__(self, channels, style_dim, dim_ffn=None, kernel_size=7):
         super(ConvNeXtModBlock, self).__init__()
@@ -76,7 +80,7 @@ class ConvNeXtBlock(nn.Module):
         if dim_ffn == None:
             dim_ffn = channels * 4
         self.c1 = nn.Conv2d(channels, channels, kernel_size, 1, kernel_size//2, padding_mode='replicate', groups=channels)
-        self.norm = nn.LayerNorm(channels)
+        self.norm = LayerNorm(channels)
         self.c2 = nn.Conv2d(channels, dim_ffn, 1, 1, 0)
         self.gelu = nn.GELU()
         self.c3 = nn.Conv2d(dim_ffn, channels, 1, 1, 0)
@@ -98,6 +102,10 @@ class ToRGB(nn.Module):
 
     def forward(self, x, y):
         return self.c(x, self.a(y))
+
+class FromRGB(nn.Module):
+    def __init__(self, channels):
+        super(FromRGB, self).__init__()
 
 class EqualLinear(nn.Module):
     def __init__(self, input_dim, output_dim, lr_mul=0.1):
