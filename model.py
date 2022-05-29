@@ -4,7 +4,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 class Conv2dMod(nn.Module):
-    """Some Information about Conv2dMod"""
     def __init__(self, input_channels, output_channels, kernel_size=3, eps=1e-4, groups=1, demodulation=True):
         super(Conv2dMod, self).__init__()
         self.weight = nn.Parameter(torch.randn(output_channels, input_channels // groups, kernel_size, kernel_size, dtype=torch.float32))
@@ -91,3 +90,44 @@ class ConvNeXtBlock(nn.Module):
         x = self.c3(x)
         return x + res
 
+class ToRGB(nn.Module):
+    def __init__(self, channels, style_dim):
+        super(ToRGB, self).__init__()
+        self.a = nn.Linear(style_dim, 3)
+        self.c = Conv2dMod(channels, 3, 1, demodulation=False)
+
+    def forward(self, x, y):
+        return self.c(x, self.a(y))
+
+class EqualLinear(nn.Module):
+    def __init__(self, input_dim, output_dim, lr_mul=0.1):
+        super(EqualLinear, self).__init__()
+        self.weight = nn.Parameter(torch.randn(output_dim, input_dim))
+        self.bias = nn.Parameter(torch.zeros(output_dim))
+        self.lr_mul = lr_mul
+    def forward(self, x):
+        return F.linear(x, self.weight * self.lr_mul, self.bias *  self.lr_mul)
+
+class MappingNetwork(nn.Module):
+    def __init__(self, style_dim=512, num_layers=8):
+        super(MappingNetwork, self).__init__()
+        self.seq = nn.Sequential(*[nn.Sequential(EqualLinear(style_dim, style_dim), nn.GELU()) for _ in range(num_layers)])
+        self.norm = nn.LayerNorm(style_dim)
+    def forward(self, x):
+        return self.norm(self.seq(x))
+
+class GeneratorBlock(nn.Module):
+    def __init__(self, input_channels, output_channels, style_dim, num_layers=2, upscale=True):
+        super(GeneratorBlock, self).__init__()
+        self.in_conv = nn.Conv2d(input_channels, output_channels, 1, 1, 0)
+        self.upscale = nn.Upsample(scale_factor=2) if upscale else nn.Identity()
+        self.layers = nn.ModuleList([ConvNeXtModBlock(output_channels, style_dim)])
+        self.to_rgb = ToRGB(output_channels, style_dim)
+    
+    def forward(self, x, y):
+        x = self.upscale(x)
+        x = self.in_conv(x)
+        for l in self.layers:
+            x = l(x, y)
+        rgb = self.to_rgb(x)
+        return x, rgb
