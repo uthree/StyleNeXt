@@ -1,7 +1,18 @@
+import os
+import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import torchvision.transforms as transforms
+
+from tqdm import tqdm
+import multiprocessing
+import numpy as np
+from PIL import Image
+
+from dataset import ImageDataset
 
 class Conv2dMod(nn.Module):
     def __init__(self, input_channels, output_channels, kernel_size=3, eps=1e-6, groups=1, demodulation=True):
@@ -69,6 +80,7 @@ class ConvNeXtModBlock(nn.Module):
             dim_ffn = channels * 4
         self.a1 = nn.Linear(style_dim, channels)
         self.c1 = Conv2dMod(channels, channels, kernel_size=kernel_size, groups=channels)
+        self.norm = ChannelNorm(channels)
         self.a2 = nn.Linear(style_dim, dim_ffn)
         self.c2 = Conv2dMod(channels, dim_ffn, kernel_size=1)
         self.gelu = nn.GELU()
@@ -78,6 +90,7 @@ class ConvNeXtModBlock(nn.Module):
     def forward(self, x, y):
         res = x
         x = self.c1(x, self.a1(y))
+        x = self.norm(x)
         x = self.c2(x, self.a2(y))
         x = self.gelu(x)
         x = self.c3(x, self.a3(y))
@@ -255,4 +268,105 @@ class Discriminator(nn.Module):
         self.layers.insert(0, DiscriminatorBlock(ch, self.last_channels, self.num_layers_per_block, downscale))
         self.last_channels = ch
 
+class GAN(nn.Module):
+    def __init__(
+            self,
+            initial_channels=512,
+            style_dim=512,
+            max_resolution=512,
+            num_layers_per_block=2
+            ):
+        super(GAN, self).__init__()
+        self.style_dim = style_dim
+        self.resolution = 8
+        self.max_resolution = max_resolution
+        self.mapping_network = MappingNetwork(style_dim)
+        self.generator = Generator(initial_channels, style_dim, num_layers_per_block)
+        self.discriminator = Discriminator(initial_channels, num_layers_per_block)
+
+    def train_resolution(self, dataset, device=torch.device('cpu'), batch_size=1, augmentation=nn.Identity(), lr=1e-5, num_epoch=1, result_dir="./results/", model_path='./model.pt'):
+        if not os.path.exists(result_dir):
+            os.mkdir(result_dir)
+
+        bar_epoch = tqdm(total=num_epoch * len(dataset), position=0)
+        bar_batch = tqdm(total=len(dataset), position=1)
+        bar_epoch.set_description(desc='[Loading]')
+        bar_epoch.update(0)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        T = augmentation
+        M, G, D, = self.mapping_network, self.generator, self.discriminator
+        M.to(device)
+        G.to(device)
+        D.to(device)
+
+        opt_m = optim.AdamW(M.parameters(), lr=lr)
+        opt_g = optim.AdamW(G.parameters(), lr=lr)
+        opt_d = optim.AdamW(D.parameters(), lr=lr)
+        
+        for i in range(num_epoch):
+            for j, images in enumerate(dataloader):
+                images = images.to(device)
+                N = images.shape[0]
+                # train generator
+                opt_g.zero_grad()
+                opt_m.zero_grad()
+                z1, z2 = torch.randn(N, self.style_dim, device=device), torch.randn(N, self.style_dim, device=device)
+                w1, w2 = M(z1), M(z2)
+                L = random.randint(0, len(self.generator.layers))
+                styles = [z1] * L + [z2] * (len(self.generator.layers) - L)
+                fake = G(styles)
+                g_loss = -D(fake).mean()
+                g_loss.backward()
+                opt_g.step()
+                opt_m.step()
+                
+                # train discriminator
+                opt_d.zero_grad()
+                fake = fake.detach()
+                fake = T(fake)
+                real = T(images)
+                d_loss_f = -torch.minimum(-D(fake)-1, torch.zeros(N, 1, device=device)).mean()
+                d_loss_r = -torch.minimum(D(real)-1, torch.zeros(N, 1, device=device)).mean()
+                d_loss = (d_loss_f + d_loss_r) / 2
+                d_loss.backward()
+                opt_d.step()
+                tqdm.write(f"G.Loss: {g_loss.item():.6f} D.Loss: {d_loss.item():.6f}")
+                bar_batch.set_description(desc=f"[Batch {j}] G.Loss: {g_loss.item():.4f} D.Loss: {d_loss.item():.4f}")
+                bar_epoch.set_description(desc=f"[Epoch {i}]")
+                bar_batch.update(N)
+                bar_epoch.update(N)
+                if j % 1000 == 0:
+                    # save result
+                    file_name = f"{i}_{j}.jpg"
+                    img = Image.fromarray((fake[0].cpu().numpy() * 127.5 + 127.5).astype(np.uint8).transpose(1,2,0), mode='RGB')
+                    img.save(os.path.join(result_dir, file_name))
+                    torch.save(self, model_path)
+                    tqdm.write("Saved Model.")
+            bar_batch.reset()
+                    
+    def train(self, pathes=[], num_epoch=1, batch_size=1, max_len=100000, model_path='./model.pt', device=torch.device('cpu'), lr=1e-5):
+        ds = ImageDataset(pathes, size=8, max_len=max_len)
+        while True:
+            ds.set_size(self.resolution)
+            div_bs = (self.resolution // 8)
+            bs = batch_size // div_bs
+            if bs < 4:
+                bs = 4
+            print(f"Training resolution: {self.resolution}x, batch size: {bs}")
+            aug = transforms.RandomApply([transforms.Compose([
+                    transforms.RandomHorizontalFlip(p=0.5),
+                    transforms.RandomApply([transforms.RandomCrop((self.resolution//2, self.resolution//2))],p=0.5),
+                    transforms.RandomRotation((-45, 45)),
+                    transforms.Resize((self.resolution, self.resolution))
+                    ])], p=0.5)
+            self.train_resolution(ds, device, bs, aug, lr, num_epoch)
+            if self.resolution >= self.max_resolution:
+                print("Training Complete!")
+                break
+            self.resolution *= 2
+            self.discriminator.add_layer()
+            self.generator.add_layer()
+
+    def generate_random_image(self, seed=0):
+        torch.manual_seed(seed)
 
