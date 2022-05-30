@@ -80,6 +80,7 @@ class ConvNeXtModBlock(nn.Module):
             dim_ffn = channels * 4
         self.a1 = nn.Linear(style_dim, channels)
         self.c1 = Conv2dMod(channels, channels, kernel_size=kernel_size, groups=channels)
+        self.norm = ChannelNorm(channels)
         self.a2 = nn.Linear(style_dim, dim_ffn)
         self.c2 = Conv2dMod(channels, dim_ffn, kernel_size=1)
         self.gelu = nn.GELU()
@@ -89,6 +90,7 @@ class ConvNeXtModBlock(nn.Module):
     def forward(self, x, y):
         res = x
         x = self.c1(x, self.a1(y))
+        x = self.norm(x)
         x = self.c2(x, self.a2(y))
         x = self.gelu(x)
         x = self.c3(x, self.a3(y))
@@ -153,7 +155,7 @@ class Blur(nn.Module):
         return x
 
 class EqualLinear(nn.Module):
-    def __init__(self, input_dim, output_dim, lr_mul=1.0):
+    def __init__(self, input_dim, output_dim, lr_mul=0.1):
         super(EqualLinear, self).__init__()
         self.weight = nn.Parameter(torch.randn(output_dim, input_dim))
         self.bias = nn.Parameter(torch.zeros(output_dim))
@@ -188,7 +190,7 @@ class GeneratorBlock(nn.Module):
 class Generator(nn.Module):
     def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2):
         super(Generator, self).__init__()
-        self.initial_param = nn.Parameter(torch.randn(1, initial_channels, 8, 8))
+        self.initial_param = nn.Parameter(torch.ones(1, initial_channels, 8, 8))
         self.last_channels = initial_channels
         self.style_dim = style_dim
         self.num_layers_per_block = num_layers_per_block
@@ -208,7 +210,6 @@ class Generator(nn.Module):
                 rgb_out = rgb
             else:
                 rgb_out = self.upscale(rgb_out) + rgb
-        rgb_out = torch.tanh(rgb_out)
         return rgb_out
 
     def add_layer(self, upscale=True):
