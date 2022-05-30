@@ -325,7 +325,7 @@ class GAN(nn.Module):
                 real = T(images)
                 d_loss_f = -torch.minimum(-D(fake)-1, torch.zeros(N, 1, device=device)).mean()
                 d_loss_r = -torch.minimum(D(real)-1, torch.zeros(N, 1, device=device)).mean()
-                d_loss = (d_loss_f + d_loss_r) / 2
+                d_loss = d_loss_f + d_loss_r
                 d_loss.backward()
                 opt_d.step()
                 tqdm.write(f"G.Loss: {g_loss.item():.6f} D.Loss: {d_loss.item():.6f}")
@@ -365,6 +365,31 @@ class GAN(nn.Module):
             self.discriminator.add_layer()
             self.generator.add_layer()
 
-    def generate_random_image(self, seed=0):
-        torch.manual_seed(seed)
+    def generate_random_image(self, num_images, scale=1.0):
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        images = []
+        for i in range(num_images):
+            z1 = torch.randn(1, self.style_dim).to(device)
+            z2 = torch.randn(1, self.style_dim).to(device)
+            w1 = self.mapping_network(z1) * scale
+            w2 = self.mapping_network(z2) * scale
+            L = random.randint(1, len(self.generator.layers))
+            style = [w1] * L + [w2] * (len(self.generator.layers)-L)
+            image = self.generator(style)
+            image = image.detach().cpu().numpy()
+            images.append(image[0])
+        return images
+
+    def generate_random_image_to_directory(self, num_images, dir_path="./tests", scale=1.0):
+        images = self.generate_random_image(num_images, scale=scale)
+        if not os.path.exists(dir_path):
+            os.mkdir(dir_path)
+        for i in range(num_images):
+            image = images[i]
+            image = np.transpose(image, (1, 2, 0))
+            image = image * 127.5 + 127.5
+            image = image.astype(np.uint8)
+            image = Image.fromarray(image, mode='RGB')
+            image = image.resize((256, 256))
+            image.save(os.path.join(dir_path, f"{i}.png"))
 
