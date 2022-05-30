@@ -174,7 +174,7 @@ class MappingNetwork(nn.Module):
 class GeneratorBlock(nn.Module):
     def __init__(self, input_channels, output_channels, style_dim, num_layers=2, upscale=True):
         super(GeneratorBlock, self).__init__()
-        self.upscale = nn.Upsample(scale_factor=2) if upscale else nn.Identity()
+        self.upscale = nn.Sequential(nn.Upsample(scale_factor=2), ChannelNorm(input_channels)) if upscale else nn.Identity()
         self.layers = nn.ModuleList([ConvNeXtModBlock(input_channels, style_dim) for _ in range(num_layers)])
         self.conv = nn.Conv2d(input_channels, output_channels, 1, 1, 0)
         self.to_rgb = ToRGB(output_channels, style_dim)
@@ -355,7 +355,7 @@ class GAN(nn.Module):
             print(f"Training resolution: {self.resolution}x, batch size: {bs}")
             aug = transforms.RandomApply([transforms.Compose([
                     transforms.RandomHorizontalFlip(p=0.5),
-                    transforms.RandomApply([transforms.RandomCrop((self.resolution//2, self.resolution//2))],p=0.5),
+                    transforms.RandomApply([transforms.RandomCrop((round(self.resolution * 0.8), round(self.resolution * 0.8)))],p=0.5),
                     transforms.RandomRotation((-45, 45)),
                     transforms.Resize((self.resolution, self.resolution))
                     ])], p=0.5)
