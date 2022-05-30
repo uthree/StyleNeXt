@@ -80,7 +80,6 @@ class ConvNeXtModBlock(nn.Module):
             dim_ffn = channels * 4
         self.a1 = nn.Linear(style_dim, channels)
         self.c1 = Conv2dMod(channels, channels, kernel_size=kernel_size, groups=channels)
-        self.norm = ChannelNorm(channels)
         self.a2 = nn.Linear(style_dim, dim_ffn)
         self.c2 = Conv2dMod(channels, dim_ffn, kernel_size=1)
         self.gelu = nn.GELU()
@@ -90,7 +89,6 @@ class ConvNeXtModBlock(nn.Module):
     def forward(self, x, y):
         res = x
         x = self.c1(x, self.a1(y))
-        x = self.norm(x)
         x = self.c2(x, self.a2(y))
         x = self.gelu(x)
         x = self.c3(x, self.a3(y))
