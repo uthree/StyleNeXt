@@ -153,7 +153,7 @@ class Blur(nn.Module):
         return x
 
 class EqualLinear(nn.Module):
-    def __init__(self, input_dim, output_dim, lr_mul=0.1):
+    def __init__(self, input_dim, output_dim, lr_mul=1.0):
         super(EqualLinear, self).__init__()
         self.weight = nn.Parameter(torch.randn(output_dim, input_dim))
         self.bias = nn.Parameter(torch.zeros(output_dim))
@@ -167,7 +167,7 @@ class MappingNetwork(nn.Module):
         self.seq = nn.Sequential(*[nn.Sequential(EqualLinear(style_dim, style_dim), nn.GELU()) for _ in range(num_layers)])
         self.norm = nn.LayerNorm(style_dim)
     def forward(self, x):
-        return self.norm(self.seq(x))
+        return self.seq(self.norm(x))
 
 class GeneratorBlock(nn.Module):
     def __init__(self, input_channels, output_channels, style_dim, num_layers=2, upscale=True):
@@ -243,7 +243,6 @@ class Discriminator(nn.Module):
         self.downscale = nn.Sequential(Blur(), nn.AvgPool2d(kernel_size=2))
         self.ffn = nn.Sequential(
                 nn.Linear(initial_channels + 1, initial_channels//4),
-                nn.GELU(),
                 nn.Linear(initial_channels //4, 1))
         self.add_layer(False)
 
