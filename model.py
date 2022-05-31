@@ -367,7 +367,7 @@ class GAN(nn.Module):
             print(f"Training resolution: {self.resolution}x, batch size: {bs}")
             aug = transforms.RandomApply([transforms.Compose([
                     transforms.RandomHorizontalFlip(p=0.5),
-                    transforms.RandomApply([transforms.RandomRotation((-45, 45)),
+                    transforms.RandomApply([transforms.RandomRotation((-20, 20)),
                         transforms.RandomCrop((round(self.resolution * 0.8), round(self.resolution * 0.8)))], p=0.5),
                     transforms.Resize((self.resolution, self.resolution))
                     ])], p=0.5)
@@ -386,10 +386,10 @@ class GAN(nn.Module):
         images = []
         for i in range(num_images):
             with torch.no_grad():
-                z1 = torch.randn(1, self.style_dim).to(device) * scale
-                z2 = torch.randn(1, self.style_dim).to(device) * scale
-                w1 = self.mapping_network(z1)
-                w2 = self.mapping_network(z2)
+                z1 = torch.randn(1, self.style_dim).to(device)
+                z2 = torch.randn(1, self.style_dim).to(device)
+                w1 = self.mapping_network(z1) * scale
+                w2 = self.mapping_network(z2) * scale
                 L = random.randint(1, len(self.generator.layers))
                 style = [w1] * L + [w2] * (len(self.generator.layers)-L)
                 image = self.generator(style)
