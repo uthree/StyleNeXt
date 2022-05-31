@@ -10,6 +10,7 @@ from PIL import ImageFilter
 from tqdm import tqdm
 import numpy as np
 import multiprocessing
+import glob
 
 import joblib
 
@@ -19,7 +20,7 @@ class ImageDataset(torch.utils.data.Dataset):
         super(ImageDataset, self).__init__()
         self.image_path_list = []
         for dir_path in source_dir_pathes:
-            self.image_path_list += [ os.path.join(dir_path, p) for p in  os.listdir(dir_path) ]
+            self.image_path_list += glob.glob(os.path.join(dir_path, "*.jpg")) + glob.glob(os.path.join(dir_path, "*.png"))
         self.chache_dir = chache_dir
         self.image_path_list = self.image_path_list[:max_len]
         self.size = -1
