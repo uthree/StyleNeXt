@@ -305,9 +305,9 @@ class GAN(nn.Module):
         G.to(device)
         D.to(device)
 
-        opt_m = optim.AdamW(M.parameters(), lr=lr)
-        opt_g = optim.AdamW(G.parameters(), lr=lr)
-        opt_d = optim.AdamW(D.parameters(), lr=lr)
+        opt_m = optim.RAdam(M.parameters(), lr=lr)
+        opt_g = optim.RAdam(G.parameters(), lr=lr)
+        opt_d = optim.RAdam(D.parameters(), lr=lr)
         
         for i in range(num_epoch):
             for j, images in enumerate(dataloader):
