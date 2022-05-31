@@ -211,6 +211,7 @@ class Generator(nn.Module):
                 rgb_out = rgb
             else:
                 rgb_out = self.upscale(rgb_out) + rgb * self.alpha
+        rgb_out = torch.tanh(rgb_out)
         return rgb_out
 
     def add_layer(self, upscale=True):
