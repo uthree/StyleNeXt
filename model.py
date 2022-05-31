@@ -210,7 +210,7 @@ class Generator(nn.Module):
             if rgb_out == None:
                 rgb_out = rgb
             else:
-                rgb_out = self.upscale(rgb_out) * (1-self.alpha) + rgb * alpha
+                rgb_out = self.upscale(rgb_out) * (1-self.alpha) + rgb * self.alpha
         return rgb_out
 
     def add_layer(self, upscale=True):
