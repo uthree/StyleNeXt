@@ -196,6 +196,7 @@ class Generator(nn.Module):
         self.num_layers_per_block = num_layers_per_block
         self.layers = nn.ModuleList([])
         self.upscale = nn.Sequential(nn.Upsample(scale_factor=2), Blur())
+        self.alpha = 0
 
         self.add_layer(upscale=False)
 
@@ -209,10 +210,11 @@ class Generator(nn.Module):
             if rgb_out == None:
                 rgb_out = rgb
             else:
-                rgb_out = self.upscale(rgb_out) + rgb
+                rgb_out = self.upscale(rgb_out) * (1-self.alpha) + rgb * alpha
         return rgb_out
 
     def add_layer(self, upscale=True):
+        self.alpha = 0
         ch = self.last_channels // 2
         if ch < 16:
             ch = 16
@@ -246,12 +248,13 @@ class Discriminator(nn.Module):
                 nn.Linear(initial_channels + 1, initial_channels//4),
                 nn.Linear(initial_channels //4, 1))
         self.add_layer(False)
+        self.alpha = 0
 
     def forward(self, rgb):
         x = self.layers[0].from_rgb(rgb)
         for i, l in enumerate(self.layers):
             if i == 1:
-                x += self.layers[1].from_rgb(self.downscale(rgb))
+                x += self.layers[1].from_rgb(self.downscale(rgb)) * self.alpha
             x = l(x)
         x = self.pool8x(x)
         mb_std = torch.std(x, dim=[0], keepdim=False).mean().unsqueeze(0).repeat(x.shape[0], 1)
@@ -266,6 +269,7 @@ class Discriminator(nn.Module):
             ch = 16
         self.layers.insert(0, DiscriminatorBlock(ch, self.last_channels, self.num_layers_per_block, downscale))
         self.last_channels = ch
+        self.alpha = 0
 
 class GAN(nn.Module):
     def __init__(
@@ -306,6 +310,11 @@ class GAN(nn.Module):
             for j, images in enumerate(dataloader):
                 images = images.to(device)
                 N = images.shape[0]
+                # caluclate alpha
+                alpha = min(1.0, (bar_epoch.n / (bar_epoch.total / 2)))
+                G.alpha = alpha
+                D.alpha = alpha
+
                 # train generator
                 opt_g.zero_grad()
                 opt_m.zero_grad()
