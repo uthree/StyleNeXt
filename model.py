@@ -161,15 +161,15 @@ class EqualLinear(nn.Module):
         self.bias = nn.Parameter(torch.zeros(output_dim))
         self.lr_mul = lr_mul
     def forward(self, x):
-        return F.linear(x, self.weight * self.lr_mul, self.bias *  self.lr_mul)
+        return F.linear(x, self.weight * self.lr_mul, self.bias * self.lr_mul)
 
 class MappingNetwork(nn.Module):
     def __init__(self, style_dim=512, num_layers=8):
         super(MappingNetwork, self).__init__()
         self.seq = nn.Sequential(*[nn.Sequential(EqualLinear(style_dim, style_dim), nn.GELU()) for _ in range(num_layers)])
-        self.norm = nn.LayerNorm(style_dim)
+        self.prenorm = nn.LayerNorm(style_dim)
     def forward(self, x):
-        return self.seq(self.norm(x))
+        return self.seq(self.prenorm(x))
 
 class GeneratorBlock(nn.Module):
     def __init__(self, input_channels, output_channels, style_dim, num_layers=2, upscale=True):
@@ -312,7 +312,7 @@ class GAN(nn.Module):
                 z1, z2 = torch.randn(N, self.style_dim, device=device), torch.randn(N, self.style_dim, device=device)
                 w1, w2 = M(z1), M(z2)
                 L = random.randint(0, len(self.generator.layers))
-                styles = [z1] * L + [z2] * (len(self.generator.layers) - L)
+                styles = [w1] * L + [w2] * (len(self.generator.layers) - L)
                 fake = G(styles)
                 g_loss = -D(fake).mean()
                 g_loss.backward()
@@ -329,7 +329,7 @@ class GAN(nn.Module):
                 d_loss = d_loss_f + d_loss_r
                 d_loss.backward()
                 opt_d.step()
-                tqdm.write(f"G.Loss: {g_loss.item():.6f} D.Loss: {d_loss.item():.6f}")
+                tqdm.write(f"Batch: {j} G.Loss: {g_loss.item():.6f} D.Loss: {d_loss.item():.6f}")
                 bar_batch.set_description(desc=f"[Batch {j}] G.Loss: {g_loss.item():.4f} D.Loss: {d_loss.item():.4f}")
                 bar_epoch.set_description(desc=f"[Epoch {i}]")
                 bar_batch.update(N)
@@ -338,6 +338,7 @@ class GAN(nn.Module):
                     # save result
                     file_name = f"{i}_{j}.jpg"
                     img = Image.fromarray((fake[0].cpu().numpy() * 127.5 + 127.5).astype(np.uint8).transpose(1,2,0), mode='RGB')
+                    img = img.resize((256, 256))
                     img.save(os.path.join(result_dir, file_name))
                     torch.save(self, model_path)
                     tqdm.write("Saved Model.")
@@ -354,8 +355,8 @@ class GAN(nn.Module):
             print(f"Training resolution: {self.resolution}x, batch size: {bs}")
             aug = transforms.RandomApply([transforms.Compose([
                     transforms.RandomHorizontalFlip(p=0.5),
-                    transforms.RandomApply([transforms.RandomCrop((round(self.resolution * 0.8), round(self.resolution * 0.8)))],p=0.5),
-                    transforms.RandomRotation((-45, 45)),
+                    transforms.RandomApply([transforms.RandomRotation((-45, 45)),
+                        transforms.RandomCrop((round(self.resolution * 0.8), round(self.resolution * 0.8)))], p=0.5),
                     transforms.Resize((self.resolution, self.resolution))
                     ])], p=0.5)
             self.train_resolution(ds, device, bs, aug, lr, num_epoch)
@@ -366,31 +367,31 @@ class GAN(nn.Module):
             self.discriminator.add_layer()
             self.generator.add_layer()
 
-    def generate_random_image(self, num_images, scale=1.0):
+    def generate_random_image(self, num_images, scale=1.0, seed=0):
+        torch.manual_seed(seed)
+        random.seed(seed)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         images = []
         for i in range(num_images):
-            z1 = torch.randn(1, self.style_dim).to(device)
-            z2 = torch.randn(1, self.style_dim).to(device)
-            w1 = self.mapping_network(z1) * scale
-            w2 = self.mapping_network(z2) * scale
-            L = random.randint(1, len(self.generator.layers))
-            style = [w1] * L + [w2] * (len(self.generator.layers)-L)
-            image = self.generator(style)
-            image = image.detach().cpu().numpy()
-            images.append(image[0])
+            with torch.no_grad():
+                z1 = torch.randn(1, self.style_dim).to(device) * scale
+                z2 = torch.randn(1, self.style_dim).to(device) * scale
+                w1 = self.mapping_network(z1)
+                w2 = self.mapping_network(z2)
+                L = random.randint(1, len(self.generator.layers))
+                style = [w1] * L + [w2] * (len(self.generator.layers)-L)
+                image = self.generator(style)
+                image = image.detach().cpu().numpy()
+                images.append(image[0])
         return images
 
     def generate_random_image_to_directory(self, num_images, dir_path="./tests", scale=1.0):
         images = self.generate_random_image(num_images, scale=scale)
         if not os.path.exists(dir_path):
             os.mkdir(dir_path)
-        for i in range(num_images):
-            image = images[i]
-            image = np.transpose(image, (1, 2, 0))
-            image = image * 127.5 + 127.5
-            image = image.astype(np.uint8)
-            image = Image.fromarray(image, mode='RGB')
-            image = image.resize((256, 256))
-            image.save(os.path.join(dir_path, f"{i}.png"))
+        print("Generating...")
+        for i in tqdm(range(num_images)):
+            img = Image.fromarray((images[i] * 127.5 + 127.5).astype(np.uint8).transpose(1,2,0), mode='RGB')
+            img = img.resize((256, 256))
+            img.save(os.path.join(dir_path, f"{i}.jpg"), mode='RGB')
 

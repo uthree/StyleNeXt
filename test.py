@@ -4,8 +4,8 @@ import torch
 import os
 import sys
 
-if os.path.exists('model.pt'):
-    model = torch.load('model.pt')
+if os.path.exists('./model.pt'):
+    model = torch.load('./model.pt')
     print("Loaded model")
 else:
     print("Creating new model...")
