@@ -251,7 +251,9 @@ class Discriminator(nn.Module):
         self.alpha = 0
 
     def forward(self, rgb):
-        x = self.layers[0].from_rgb(rgb) * self.alpha
+        x = self.layers[0].from_rgb(rgb)
+        if len(self.layers) > 1:
+            x = x * self.alpha
         for i, l in enumerate(self.layers):
             if i == 1:
                 x += self.layers[1].from_rgb(self.downscale(rgb)) * (1 - self.alpha)
