@@ -366,7 +366,8 @@ class GAN(nn.Module):
             aug = transforms.RandomApply([transforms.Compose([
                     transforms.RandomHorizontalFlip(p=0.5),
                     transforms.RandomApply([transforms.RandomRotation((-20, 20)),
-                        transforms.RandomCrop((round(self.resolution * 0.8), round(self.resolution * 0.8)))], p=0.5),
+                        transforms.CenterCrop((round(self.resolution * 0.8), round(self.resolution * 0.8)))], p=0.5),
+                    transforms.RandomApply([transforms.RandomCrop((round(self.resolution * 0.8), round(self.resolution * 0.8)))], p=0.5),
                     transforms.Resize((self.resolution, self.resolution))
                     ])], p=0.5)
             self.train_resolution(ds, device, bs, aug, lr, num_epoch)
