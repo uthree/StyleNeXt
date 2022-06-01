@@ -277,7 +277,7 @@ class GAN(nn.Module):
             self,
             initial_channels=512,
             style_dim=512,
-            max_resolution=512,
+            max_resolution=256,
             num_layers_per_block=2
             ):
         super(GAN, self).__init__()
@@ -354,7 +354,9 @@ class GAN(nn.Module):
                     tqdm.write("Saved Model.")
             bar_batch.reset()
                     
-    def train(self, pathes=[], num_epoch=1, batch_size=1, max_len=100000, model_path='./model.pt', device=torch.device('cpu'), lr=1e-5):
+    def train(self, pathes=[], num_epoch=1, batch_size=1, max_len=100000, model_path='./model.pt', device=torch.device('cpu'), lr=1e-5, max_resolution=None):
+        if max_resolution != None:
+            self.max_resolution = max_resolution
         ds = ImageDataset(pathes, size=8, max_len=max_len)
         while True:
             ds.set_size(self.resolution)
