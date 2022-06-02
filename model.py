@@ -210,7 +210,9 @@ class Generator(nn.Module):
             if rgb_out == None:
                 rgb_out = rgb
             else:
-                rgb_out = self.upscale(rgb_out) + rgb * self.alpha
+                if i == len(self.layers)-1:
+                    rgb = rgb * self.alpha
+                rgb_out = self.upscale(rgb_out) + rgb
         rgb_out = torch.tanh(rgb_out)
         return rgb_out
 
@@ -255,7 +257,7 @@ class Discriminator(nn.Module):
         x = self.layers[0].from_rgb(rgb)
         for i, l in enumerate(self.layers):
             if i == 1:
-                x = x * self.alpha +  self.layers[1].from_rgb(self.downscale(rgb)) * (1 - self.alpha)
+                x = x * self.alpha + self.layers[1].from_rgb(self.downscale(rgb)) * (1 - self.alpha)
             x = l(x)
         x = self.pool8x(x)
         mb_std = torch.std(x, dim=[0], keepdim=False).mean().unsqueeze(0).repeat(x.shape[0], 1)
