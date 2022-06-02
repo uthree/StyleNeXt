@@ -88,13 +88,12 @@ class ConvNeXtModBlock(nn.Module):
         self.c3 = Conv2dMod(dim_ffn, channels, kernel_size=1)
 
     def forward(self, x, y):
-        res = x
         x = self.c1(x, self.a1(y))
         x = self.norm(x)
         x = self.c2(x, self.a2(y))
         x = self.gelu(x)
         x = self.c3(x, self.a3(y))
-        return x + res
+        return x
 
 class ConvNeXtBlock(nn.Module):
     def __init__(self, channels, dim_ffn=None, kernel_size=7):
@@ -102,15 +101,13 @@ class ConvNeXtBlock(nn.Module):
         if dim_ffn == None:
             dim_ffn = channels * 4
         self.c1 = nn.Conv2d(channels, channels, kernel_size, 1, kernel_size//2, padding_mode='replicate', groups=channels)
-        self.norm = ChannelNorm(channels)
         self.c2 = nn.Conv2d(channels, dim_ffn, 1, 1, 0)
-        self.gelu = nn.GELU()
+        self.gelu = nn.LeakyReLU(0.2)
         self.c3 = nn.Conv2d(dim_ffn, channels, 1, 1, 0)
     
     def forward(self, x):
         res = x
         x = self.c1(x)
-        x = self.norm(x)
         x = self.c2(x)
         x = self.gelu(x)
         x = self.c3(x)
@@ -190,7 +187,7 @@ class GeneratorBlock(nn.Module):
 class Generator(nn.Module):
     def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2):
         super(Generator, self).__init__()
-        self.initial_param = nn.Parameter(torch.ones(1, initial_channels, 8, 8))
+        self.initial_param = nn.Parameter(torch.randn(1, initial_channels, 8, 8))
         self.last_channels = initial_channels
         self.style_dim = style_dim
         self.num_layers_per_block = num_layers_per_block
@@ -213,7 +210,6 @@ class Generator(nn.Module):
                 if i == len(self.layers)-1:
                     rgb = rgb * self.alpha
                 rgb_out = self.upscale(rgb_out) + rgb
-        rgb_out = torch.tanh(rgb_out)
         return rgb_out
 
     def add_layer(self, upscale=True):
