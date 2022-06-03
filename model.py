@@ -104,7 +104,7 @@ class ConvNeXtBlock(nn.Module):
         self.c1 = nn.Conv2d(channels, channels, kernel_size, 1, kernel_size//2, padding_mode='replicate', groups=channels)
         self.norm = ChannelNorm(channels)
         self.c2 = nn.Conv2d(channels, dim_ffn, 1, 1, 0)
-        self.gelu = nn.LeakyReLU(0.2)
+        self.relu = nn.LeakyReLU(0.2)
         self.c3 = nn.Conv2d(dim_ffn, channels, 1, 1, 0)
     
     def forward(self, x):
@@ -112,7 +112,7 @@ class ConvNeXtBlock(nn.Module):
         x = self.c1(x)
         x = self.norm(x)
         x = self.c2(x)
-        x = self.gelu(x)
+        x = self.relu(x)
         x = self.c3(x)
         return x + res
 
@@ -157,7 +157,7 @@ class Blur(nn.Module):
 class EqualLinear(nn.Module):
     def __init__(self, input_dim, output_dim, lr_mul=0.1):
         super(EqualLinear, self).__init__()
-        self.weight = nn.Parameter(torch.rand(output_dim, input_dim)-0.5)
+        self.weight = nn.Parameter(torch.randn(output_dim, input_dim))
         self.bias = nn.Parameter(torch.zeros(output_dim))
         self.lr_mul = lr_mul
     def forward(self, x):
@@ -168,8 +168,9 @@ class MappingNetwork(nn.Module):
         super(MappingNetwork, self).__init__()
         self.seq = nn.Sequential(*[nn.Sequential(EqualLinear(style_dim, style_dim), nn.GELU()) for _ in range(num_layers)])
         self.prenorm = nn.LayerNorm(style_dim)
+        self.postnorm = nn.LayerNorm(style_dim)
     def forward(self, x):
-        return self.seq(self.prenorm(x))
+        return self.postnorm(self.seq(self.prenorm(x)))
 
 class GeneratorBlock(nn.Module):
     def __init__(self, input_channels, output_channels, style_dim, num_layers=2, upscale=True):
