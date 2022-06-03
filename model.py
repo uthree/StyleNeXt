@@ -101,6 +101,7 @@ class ConvNeXtBlock(nn.Module):
         if dim_ffn == None:
             dim_ffn = channels * 4
         self.c1 = nn.Conv2d(channels, channels, kernel_size, 1, kernel_size//2, padding_mode='replicate', groups=channels)
+        self.norm = ChannelNorm(channels)
         self.c2 = nn.Conv2d(channels, dim_ffn, 1, 1, 0)
         self.gelu = nn.LeakyReLU(0.2)
         self.c3 = nn.Conv2d(dim_ffn, channels, 1, 1, 0)
@@ -108,6 +109,7 @@ class ConvNeXtBlock(nn.Module):
     def forward(self, x):
         res = x
         x = self.c1(x)
+        x = self.norm(x)
         x = self.c2(x)
         x = self.gelu(x)
         x = self.c3(x)
@@ -387,8 +389,8 @@ class GAN(nn.Module):
         images = []
         for i in range(num_images):
             with torch.no_grad():
-                z1 = torch.randn(1, self.style_dim).to(device)
-                z2 = torch.randn(1, self.style_dim).to(device)
+                z1 = torch.rand(1, self.style_dim).to(device) * 2 -1
+                z2 = torch.rand(1, self.style_dim).to(device) * 2 -1
                 w1 = self.mapping_network(z1) * scale
                 w2 = self.mapping_network(z2) * scale
                 L = random.randint(1, len(self.generator.layers))
