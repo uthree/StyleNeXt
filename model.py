@@ -339,7 +339,7 @@ class GAN(nn.Module):
                 d_loss = d_loss_f + d_loss_r
                 d_loss.backward()
                 opt_d.step()
-                tqdm.write(f"Batch: {j} G.Loss: {g_loss.item():.6f} (range: {g_range_loss.item():.6f}, adv.: {g_loss.item():.6f})  D.Loss: {d_loss.item():.6f} (fake: {d_loss_f.item():.6f}, real: {d_loss_r.item():.6f}) Alpha: {alpha:.4f}")
+                tqdm.write(f"Batch: {j} G.Loss: {g_loss.item():.4f} (range: {g_range_loss.item():.4f}, adv.: {g_loss.item():.4f})  D.Loss: {d_loss.item():.4f} (fake: {d_loss_f.item():.4f}, real: {d_loss_r.item():.4f}) Alpha: {alpha:.4f}")
                 bar_batch.set_description(desc=f"[Batch {j}] G.Loss: {g_loss.item():.4f} D.Loss: {d_loss.item():.4f}")
                 bar_epoch.set_description(desc=f"[Epoch {i}]")
                 bar_batch.update(N)
