@@ -187,7 +187,7 @@ class GeneratorBlock(nn.Module):
         return x, rgb
 
 class Generator(nn.Module):
-    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2):
+    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=True):
         super(Generator, self).__init__()
         self.initial_param = nn.Parameter(torch.randn(1, initial_channels, 8, 8))
         self.last_channels = initial_channels
@@ -196,6 +196,7 @@ class Generator(nn.Module):
         self.layers = nn.ModuleList([])
         self.upscale = nn.Sequential(nn.Upsample(scale_factor=2), Blur())
         self.alpha = 0
+        self.tanh = nn.Tanh() if tanh else nn.Identity
 
         self.add_layer(upscale=False)
 
@@ -212,6 +213,7 @@ class Generator(nn.Module):
                 if i == len(self.layers)-1:
                     rgb = rgb * self.alpha
                 rgb_out = self.upscale(rgb_out) + rgb
+        rgb_out = self.tanh(rgb_out)
         return rgb_out
 
     def add_layer(self, upscale=True):
