@@ -323,6 +323,8 @@ class GAN(nn.Module):
                 styles = [w1] * L + [w2] * (len(self.generator.layers) - L)
                 fake = G(styles)
                 g_loss = -D(fake).mean()
+                g_range_loss = torch.maximum(fake, torch.ones(*fake.shape, device=device)).mean() - torch.minimum(-fake, -torch.ones(*fake.shape, device=device)).mean()
+                g_loss += g_range_loss
                 g_loss.backward()
                 opt_g.step()
                 opt_m.step()
