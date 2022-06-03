@@ -156,7 +156,7 @@ class Blur(nn.Module):
 class EqualLinear(nn.Module):
     def __init__(self, input_dim, output_dim, lr_mul=0.1):
         super(EqualLinear, self).__init__()
-        self.weight = nn.Parameter(torch.randn(output_dim, input_dim))
+        self.weight = nn.Parameter(torch.rand(output_dim, input_dim)-0.5)
         self.bias = nn.Parameter(torch.zeros(output_dim))
         self.lr_mul = lr_mul
     def forward(self, x):
@@ -187,7 +187,7 @@ class GeneratorBlock(nn.Module):
         return x, rgb
 
 class Generator(nn.Module):
-    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=True):
+    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=False):
         super(Generator, self).__init__()
         self.initial_param = nn.Parameter(torch.randn(1, initial_channels, 8, 8))
         self.last_channels = initial_channels
@@ -196,7 +196,7 @@ class Generator(nn.Module):
         self.layers = nn.ModuleList([])
         self.upscale = nn.Sequential(nn.Upsample(scale_factor=2), Blur())
         self.alpha = 0
-        self.tanh = nn.Tanh() if tanh else nn.Identity
+        self.tanh = nn.Tanh() if tanh else nn.Identity()
 
         self.add_layer(upscale=False)
 
@@ -391,8 +391,8 @@ class GAN(nn.Module):
         images = []
         for i in range(num_images):
             with torch.no_grad():
-                z1 = torch.rand(1, self.style_dim).to(device) * 2 -1
-                z2 = torch.rand(1, self.style_dim).to(device) * 2 -1
+                z1 = torch.randn(1, self.style_dim).to(device)
+                z2 = torch.randn(1, self.style_dim).to(device)
                 w1 = self.mapping_network(z1) * scale
                 w2 = self.mapping_network(z2) * scale
                 L = random.randint(1, len(self.generator.layers))
