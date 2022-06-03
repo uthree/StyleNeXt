@@ -88,12 +88,13 @@ class ConvNeXtModBlock(nn.Module):
         self.c3 = Conv2dMod(dim_ffn, channels, kernel_size=1)
 
     def forward(self, x, y):
+        res = x
         x = self.c1(x, self.a1(y))
         x = self.norm(x)
         x = self.c2(x, self.a2(y))
         x = self.gelu(x)
         x = self.c3(x, self.a3(y))
-        return x
+        return x + res
 
 class ConvNeXtBlock(nn.Module):
     def __init__(self, channels, dim_ffn=None, kernel_size=7):
