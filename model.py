@@ -189,7 +189,7 @@ class GeneratorBlock(nn.Module):
         return x, rgb
 
 class Generator(nn.Module):
-    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=False):
+    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=True):
         super(Generator, self).__init__()
         self.initial_param = nn.Parameter(torch.randn(1, initial_channels, 8, 8))
         self.last_channels = initial_channels
@@ -316,7 +316,7 @@ class GAN(nn.Module):
                 images = images.to(device)
                 N = images.shape[0]
                 # caluclate alpha
-                alpha = min(1.0, (bar_epoch.n / (bar_epoch.total / 2)))
+                alpha = min(1.0, (bar_epoch.n / (bar_epoch.total / 10)))
                 G.alpha = alpha
                 D.alpha = alpha
 
