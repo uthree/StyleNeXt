@@ -187,7 +187,7 @@ class GeneratorBlock(nn.Module):
         return x, rgb
 
 class Generator(nn.Module):
-    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=True):
+    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=False):
         super(Generator, self).__init__()
         self.initial_param = nn.Parameter(torch.randn(1, initial_channels, 8, 8))
         self.last_channels = initial_channels
