@@ -166,11 +166,9 @@ class EqualLinear(nn.Module):
 class MappingNetwork(nn.Module):
     def __init__(self, style_dim=512, num_layers=8):
         super(MappingNetwork, self).__init__()
-        self.seq = nn.Sequential(*[nn.Sequential(EqualLinear(style_dim, style_dim), nn.GELU()) for _ in range(num_layers)])
-        self.prenorm = nn.LayerNorm(style_dim)
-        self.postnorm = nn.LayerNorm(style_dim)
+        self.seq = nn.Sequential(*[nn.Sequential(EqualLinear(style_dim, style_dim), nn.GELU(), nn.LayerNorm(style_dim)) for _ in range(num_layers)])
     def forward(self, x):
-        return self.postnorm(self.seq(self.prenorm(x)))
+        return self.prenorm(x)
 
 class GeneratorBlock(nn.Module):
     def __init__(self, input_channels, output_channels, style_dim, num_layers=2, upscale=True):
@@ -189,7 +187,7 @@ class GeneratorBlock(nn.Module):
         return x, rgb
 
 class Generator(nn.Module):
-    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=True):
+    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=False):
         super(Generator, self).__init__()
         self.initial_param = nn.Parameter(torch.randn(1, initial_channels, 8, 8))
         self.last_channels = initial_channels
@@ -292,7 +290,7 @@ class GAN(nn.Module):
         self.generator = Generator(initial_channels, style_dim, num_layers_per_block)
         self.discriminator = Discriminator(initial_channels, num_layers_per_block)
 
-    def train_resolution(self, dataset, device=torch.device('cpu'), batch_size=1, augmentation=nn.Identity(), lr=1e-5, num_epoch=1, result_dir="./results/", model_path='./model.pt'):
+    def train_resolution(self, dataset, device=torch.device('cpu'), batch_size=1, augmentation=nn.Identity(), lr=1e-5, num_epoch=1, result_dir="./results/", model_path='./model.pt', range_loss=True):
         if not os.path.exists(result_dir):
             os.mkdir(result_dir)
 
@@ -330,7 +328,9 @@ class GAN(nn.Module):
                 fake = G(styles)
                 g_adv_loss = -D(fake).mean()
                 g_range_loss = torch.maximum(fake-1, torch.zeros(*fake.shape, device=device)).mean() - torch.minimum(-fake+1, -torch.zeros(*fake.shape, device=device)).mean()
-                g_loss = g_adv_loss + g_range_loss
+                g_loss = g_adv_loss
+                if range_loss:
+                    g_loss += g_range_loss
                 g_loss.backward()
                 opt_g.step()
                 opt_m.step()
@@ -360,7 +360,7 @@ class GAN(nn.Module):
                     tqdm.write("Saved Model.")
             bar_batch.reset()
                     
-    def train(self, pathes=[], num_epoch=1, batch_size=1, max_len=100000, model_path='./model.pt', device=torch.device('cpu'), lr=1e-5, max_resolution=None):
+    def train(self, pathes=[], num_epoch=1, batch_size=1, max_len=100000, model_path='./model.pt', device=torch.device('cpu'), lr=1e-5, max_resolution=None, range_loss=True):
         if max_resolution != None:
             self.max_resolution = max_resolution
         ds = ImageDataset(pathes, size=8, max_len=max_len)
@@ -378,7 +378,7 @@ class GAN(nn.Module):
                     transforms.RandomApply([transforms.RandomCrop((round(self.resolution * 0.8), round(self.resolution * 0.8)))], p=0.5),
                     transforms.Resize((self.resolution, self.resolution))
                     ])], p=0.5)
-            self.train_resolution(ds, device, bs, aug, lr, num_epoch)
+            self.train_resolution(ds, device, bs, aug, lr, num_epoch, range_loss=range_loss)
             if self.resolution >= self.max_resolution:
                 print("Training Complete!")
                 break
