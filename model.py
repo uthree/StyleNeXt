@@ -168,7 +168,7 @@ class MappingNetwork(nn.Module):
         super(MappingNetwork, self).__init__()
         self.seq = nn.Sequential(*[nn.Sequential(EqualLinear(style_dim, style_dim), nn.GELU(), nn.LayerNorm(style_dim)) for _ in range(num_layers)])
     def forward(self, x):
-        return self.prenorm(x)
+        return self.seq(x)
 
 class GeneratorBlock(nn.Module):
     def __init__(self, input_channels, output_channels, style_dim, num_layers=2, upscale=True):
