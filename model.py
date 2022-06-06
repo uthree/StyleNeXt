@@ -187,7 +187,7 @@ class GeneratorBlock(nn.Module):
         return x, rgb
 
 class Generator(nn.Module):
-    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=False):
+    def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=True):
         super(Generator, self).__init__()
         self.initial_param = nn.Parameter(torch.randn(1, initial_channels, 8, 8))
         self.last_channels = initial_channels
@@ -219,8 +219,8 @@ class Generator(nn.Module):
     def add_layer(self, upscale=True):
         self.alpha = 0
         ch = self.last_channels // 2
-        if ch < 16:
-            ch = 16
+        if ch < 32:
+            ch = 32
         self.layers.append(GeneratorBlock(self.last_channels, ch, self.style_dim, num_layers=self.num_layers_per_block, upscale=upscale))
         self.last_channels = ch
 
@@ -268,8 +268,8 @@ class Discriminator(nn.Module):
         
     def add_layer(self, downscale=True):
         ch = self.last_channels // 2
-        if ch < 16:
-            ch = 16
+        if ch < 32:
+            ch = 32
         self.layers.insert(0, DiscriminatorBlock(ch, self.last_channels, self.num_layers_per_block, downscale))
         self.last_channels = ch
         self.alpha = 0
