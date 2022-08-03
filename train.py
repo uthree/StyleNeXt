@@ -12,4 +12,4 @@ else:
 
 # training
 device = torch.device("cuda:0") if torch.cuda.is_available else torch.device('cpu')
-model.train(sys.argv[1:], num_epoch=100, batch_size=64, device=device, max_len=20000, lr=1e-4, max_resolution=256, range_loss=True)
+model.train(sys.argv[1:], num_epoch=20, batch_size=32, device=device, max_len=50000, lr=1e-4, max_resolution=256, range_loss=True)

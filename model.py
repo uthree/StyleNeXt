@@ -74,13 +74,12 @@ class ChannelNorm(nn.Module):
         return x
 
 class ConvNeXtModBlock(nn.Module):
-    def __init__(self, channels, style_dim, dim_ffn=None, kernel_size=7):
+    def __init__(self, channels, style_dim, dim_ffn=None, kernel_size=3):
         super(ConvNeXtModBlock, self).__init__()
         if dim_ffn == None:
-            dim_ffn = channels * 4
+            dim_ffn = channels * 1
         self.a1 = nn.Linear(style_dim, channels)
         self.c1 = Conv2dMod(channels, channels, kernel_size=kernel_size, groups=channels)
-        self.norm = ChannelNorm(channels)
         self.a2 = nn.Linear(style_dim, dim_ffn)
         self.c2 = Conv2dMod(channels, dim_ffn, kernel_size=1)
         self.gelu = nn.GELU()
@@ -88,19 +87,17 @@ class ConvNeXtModBlock(nn.Module):
         self.c3 = Conv2dMod(dim_ffn, channels, kernel_size=1)
 
     def forward(self, x, y):
-        res = x
         x = self.c1(x, self.a1(y))
-        x = self.norm(x)
         x = self.c2(x, self.a2(y))
         x = self.gelu(x)
         x = self.c3(x, self.a3(y))
-        return x + res
+        return x
 
 class ConvNeXtBlock(nn.Module):
-    def __init__(self, channels, dim_ffn=None, kernel_size=7):
+    def __init__(self, channels, dim_ffn=None, kernel_size=3):
         super(ConvNeXtBlock, self).__init__()
         if dim_ffn == None:
-            dim_ffn = channels * 4
+            dim_ffn = channels * 1
         self.c1 = nn.Conv2d(channels, channels, kernel_size, 1, kernel_size//2, padding_mode='replicate', groups=channels)
         self.norm = ChannelNorm(channels)
         self.c2 = nn.Conv2d(channels, dim_ffn, 1, 1, 0)
@@ -173,7 +170,7 @@ class MappingNetwork(nn.Module):
 class GeneratorBlock(nn.Module):
     def __init__(self, input_channels, output_channels, style_dim, num_layers=2, upscale=True):
         super(GeneratorBlock, self).__init__()
-        self.upscale = nn.Sequential(nn.Upsample(scale_factor=2), ChannelNorm(input_channels)) if upscale else nn.Identity()
+        self.upscale = nn.Sequential(nn.Upsample(scale_factor=2)) if upscale else nn.Identity()
         self.layers = nn.ModuleList([ConvNeXtModBlock(input_channels, style_dim) for _ in range(num_layers)])
         self.conv = nn.Conv2d(input_channels, output_channels, 1, 1, 0)
         self.to_rgb = ToRGB(output_channels, style_dim)
@@ -189,7 +186,7 @@ class GeneratorBlock(nn.Module):
 class Generator(nn.Module):
     def __init__(self, initial_channels=512, style_dim=512, num_layers_per_block=2, tanh=True):
         super(Generator, self).__init__()
-        self.initial_param = nn.Parameter(torch.randn(1, initial_channels, 8, 8))
+        self.initial_param = nn.Parameter(torch.randn(1, initial_channels, 4, 4))
         self.last_channels = initial_channels
         self.style_dim = style_dim
         self.num_layers_per_block = num_layers_per_block
@@ -244,7 +241,7 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         self.last_channels = initial_channels
         self.num_layers_per_block = num_layers_per_block
-        self.pool8x = nn.AvgPool2d(kernel_size=8)
+        self.pool4x = nn.AvgPool2d(kernel_size=4)
         self.layers = nn.ModuleList([])
         self.downscale = nn.Sequential(Blur(), nn.AvgPool2d(kernel_size=2))
         self.ffn = nn.Sequential(
@@ -259,7 +256,7 @@ class Discriminator(nn.Module):
             if i == 1:
                 x = x * self.alpha + self.layers[1].from_rgb(self.downscale(rgb)) * (1 - self.alpha)
             x = l(x)
-        x = self.pool8x(x)
+        x = self.pool4x(x)
         mb_std = torch.std(x, dim=[0], keepdim=False).mean().unsqueeze(0).repeat(x.shape[0], 1)
         x = x.view(x.shape[0], -1)
         x = torch.cat([x, mb_std], dim=1)
@@ -284,7 +281,7 @@ class GAN(nn.Module):
             ):
         super(GAN, self).__init__()
         self.style_dim = style_dim
-        self.resolution = 8
+        self.resolution = 4
         self.max_resolution = max_resolution
         self.mapping_network = MappingNetwork(style_dim)
         self.generator = Generator(initial_channels, style_dim, num_layers_per_block)
@@ -310,11 +307,14 @@ class GAN(nn.Module):
         opt_d = optim.RAdam(D.parameters(), lr=lr)
         
         for i in range(num_epoch):
+            count_failed_discriminate = 0
             for j, images in enumerate(dataloader):
                 images = images.to(device)
                 N = images.shape[0]
                 # caluclate alpha
                 alpha = min(1.0, (bar_epoch.n / (bar_epoch.total / 10)))
+                #alpha = 1.0
+
                 G.alpha = alpha
                 D.alpha = alpha
 
@@ -331,6 +331,7 @@ class GAN(nn.Module):
                 g_loss = g_adv_loss
                 if range_loss:
                     g_loss += g_range_loss
+
                 g_loss.backward()
                 opt_g.step()
                 opt_m.step()
@@ -358,15 +359,22 @@ class GAN(nn.Module):
                     img.save(os.path.join(result_dir, file_name))
                     torch.save(self, model_path)
                     tqdm.write("Saved Model.")
+                if d_loss.item() > 0:
+                    count_failed_discriminate += 1
+                    if count_failed_discriminate > 30 and i > 1:
+                        tqdm.write("Completed training this resolution.")
+                        return
+                    else:
+                        count_failed_discriminate = 0
             bar_batch.reset()
                     
     def train(self, pathes=[], num_epoch=1, batch_size=1, max_len=100000, model_path='./model.pt', device=torch.device('cpu'), lr=1e-5, max_resolution=None, range_loss=True):
         if max_resolution != None:
             self.max_resolution = max_resolution
-        ds = ImageDataset(pathes, size=8, max_len=max_len)
+        ds = ImageDataset(pathes, size=4, max_len=max_len)
         while True:
             ds.set_size(self.resolution)
-            div_bs = (self.resolution // 8)
+            div_bs = (self.resolution // 4)
             bs = batch_size // div_bs
             if bs < 4:
                 bs = 4
