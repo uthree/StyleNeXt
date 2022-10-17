@@ -99,7 +99,6 @@ class ConvNeXtBlock(nn.Module):
         if dim_ffn == None:
             dim_ffn = channels * 1
         self.c1 = nn.Conv2d(channels, channels, kernel_size, 1, kernel_size//2, padding_mode='replicate', groups=channels)
-        self.norm = ChannelNorm(channels)
         self.c2 = nn.Conv2d(channels, dim_ffn, 1, 1, 0)
         self.relu = nn.LeakyReLU(0.2)
         self.c3 = nn.Conv2d(dim_ffn, channels, 1, 1, 0)
@@ -107,7 +106,6 @@ class ConvNeXtBlock(nn.Module):
     def forward(self, x):
         res = x
         x = self.c1(x)
-        x = self.norm(x)
         x = self.c2(x)
         x = self.relu(x)
         x = self.c3(x)
@@ -287,7 +285,7 @@ class GAN(nn.Module):
         self.generator = Generator(initial_channels, style_dim, num_layers_per_block)
         self.discriminator = Discriminator(initial_channels, num_layers_per_block)
 
-    def train_resolution(self, dataset, device=torch.device('cpu'), batch_size=1, augmentation=nn.Identity(), lr=1e-5, num_epoch=1, result_dir="./results/", model_path='./model.pt', range_loss=True):
+    def train_resolution(self, dataset, device=torch.device('cpu'), batch_size=1, augmentation=nn.Identity(), lr=1e-5, num_epoch=1, result_dir="./results/", model_path='./model.pt', autocast=True):
         if not os.path.exists(result_dir):
             os.mkdir(result_dir)
 
@@ -305,6 +303,8 @@ class GAN(nn.Module):
         opt_m = optim.RAdam(M.parameters(), lr=lr)
         opt_g = optim.RAdam(G.parameters(), lr=lr)
         opt_d = optim.RAdam(D.parameters(), lr=lr)
+
+        scaler = torch.cuda.amp.GradScaler(enabled=autocast)
         
         for i in range(num_epoch):
             count_failed_discriminate = 0
@@ -321,32 +321,37 @@ class GAN(nn.Module):
                 # train generator
                 opt_g.zero_grad()
                 opt_m.zero_grad()
-                z1, z2 = torch.randn(N, self.style_dim, device=device), torch.randn(N, self.style_dim, device=device)
-                w1, w2 = M(z1), M(z2)
-                L = random.randint(0, len(self.generator.layers))
-                styles = [w1] * L + [w2] * (len(self.generator.layers) - L)
-                fake = G(styles)
-                g_adv_loss = -D(fake).mean()
-                g_range_loss = torch.maximum(fake-1, torch.zeros(*fake.shape, device=device)).mean() - torch.minimum(-fake+1, -torch.zeros(*fake.shape, device=device)).mean()
-                g_loss = g_adv_loss
-                if range_loss:
-                    g_loss += g_range_loss
 
-                g_loss.backward()
-                opt_g.step()
-                opt_m.step()
+                with torch.cuda.amp.autocast(enabled=autocast):
+                    z1, z2 = torch.randn(N, self.style_dim, device=device), torch.randn(N, self.style_dim, device=device)
+                    w1, w2 = M(z1), M(z2)
+                    L = random.randint(0, len(self.generator.layers))
+                    styles = [w1] * L + [w2] * (len(self.generator.layers) - L)
+                    fake = G(styles)
+                    g_adv_loss = F.relu(-D(fake)).mean()
+                    g_loss = g_adv_loss
+
+                scaler.scale(g_loss).backward()
+
+                nn.utils.clip_grad_norm_(G.parameters(), max_norm=1.0, norm_type=2.0)
+
+                scaler.step(opt_g)
+                scaler.step(opt_m)
                 
                 # train discriminator
                 opt_d.zero_grad()
                 fake = fake.detach()
                 fake = T(fake)
                 real = T(images)
-                d_loss_f = -torch.minimum(-D(fake)-1, torch.zeros(N, 1, device=device)).mean()
-                d_loss_r = -torch.minimum(D(real)-1, torch.zeros(N, 1, device=device)).mean()
-                d_loss = d_loss_f + d_loss_r
-                d_loss.backward()
-                opt_d.step()
-                tqdm.write(f"Batch: {j} G.Loss: {g_loss.item():.4f} (range: {g_range_loss.item():.4f}, adv.: {g_adv_loss.item():.4f})  D.Loss: {d_loss.item():.4f} (fake: {d_loss_f.item():.4f}, real: {d_loss_r.item():.4f}) Alpha: {alpha:.4f}")
+                with torch.cuda.amp.autocast(enabled=autocast):
+                    d_loss_f = -torch.minimum(-D(fake)-1, torch.zeros(N, 1, device=device)).mean()
+                    d_loss_r = -torch.minimum(D(real)-1, torch.zeros(N, 1, device=device)).mean()
+                    d_loss = d_loss_f + d_loss_r
+                scaler.scale(d_loss).backward()
+                nn.utils.clip_grad_norm_(D.parameters(), max_norm=1.0, norm_type=2.0)   
+                scaler.step(opt_d)
+                scaler.update()
+                tqdm.write(f"Batch: {j} G.Loss: {g_loss.item():.4f} D.Loss: {d_loss.item():.4f} (fake: {d_loss_f.item():.4f}, real: {d_loss_r.item():.4f}) Alpha: {alpha:.4f}")
                 bar_batch.set_description(desc=f"[Batch {j}] G.Loss: {g_loss.item():.4f} D.Loss: {d_loss.item():.4f}")
                 bar_epoch.set_description(desc=f"[Epoch {i}]")
                 bar_batch.update(N)
@@ -368,7 +373,7 @@ class GAN(nn.Module):
                         count_failed_discriminate = 0
             bar_batch.reset()
                     
-    def train(self, pathes=[], num_epoch=1, batch_size=1, max_len=100000, model_path='./model.pt', device=torch.device('cpu'), lr=1e-5, max_resolution=None, range_loss=True):
+    def train(self, pathes=[], num_epoch=1, batch_size=1, max_len=1000, model_path='./model.pt', device=torch.device('cpu'), lr=1e-5, max_resolution=None, range_loss=True):
         if max_resolution != None:
             self.max_resolution = max_resolution
         ds = ImageDataset(pathes, size=4, max_len=max_len)
@@ -386,7 +391,7 @@ class GAN(nn.Module):
                     transforms.RandomApply([transforms.RandomCrop((round(self.resolution * 0.8), round(self.resolution * 0.8)))], p=0.5),
                     transforms.Resize((self.resolution, self.resolution))
                     ])], p=0.5)
-            self.train_resolution(ds, device, bs, aug, lr, num_epoch, range_loss=range_loss)
+            self.train_resolution(ds, device, bs, aug, lr, num_epoch)
             if self.resolution >= self.max_resolution:
                 print("Training Complete!")
                 break
